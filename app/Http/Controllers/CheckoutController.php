@@ -21,13 +21,10 @@ class CheckoutController extends Controller
         Config::$isSanitized = true;
         Config::$is3ds = true;
 
-        // Fix SSL certificate error on local/Windows development
-        // Also include CURLOPT_HTTPHEADER (constant value: 10023) to prevent
-        // PHP 8 "Undefined array key 10023" bug in midtrans-php library (ApiRequestor.php:117)
         Config::$curlOptions = [
             CURLOPT_SSL_VERIFYPEER => false,
             CURLOPT_SSL_VERIFYHOST => false,
-            CURLOPT_HTTPHEADER => [],   // Prevent PHP 8 undefined key error
+            CURLOPT_HTTPHEADER => [],
         ];
     }
 
@@ -43,7 +40,6 @@ class CheckoutController extends Controller
         return DB::transaction(function () use ($request, $validated) {
             $subtotal = 0;
 
-            // Calculate securely on server
             foreach ($validated['cart'] as $item) {
                 $product = Product::find($item['id']);
                 $subtotal += $product->price * $item['qty'];
@@ -73,7 +69,6 @@ class CheckoutController extends Controller
                     'subtotal' => $product->price * $item['qty']
                 ]);
 
-                // Deduct stock
                 $product->decrement('stock', $item['qty']);
             }
 
@@ -87,11 +82,6 @@ class CheckoutController extends Controller
                         'first_name' => auth()->user()->name,
                         'email'      => auth()->user()->email,
                     ],
-                    // ── Notification URL ──────────────────────────────────────
-                    // Midtrans akan mengirim HTTP POST ke URL ini setiap kali
-                    // status pembayaran berubah (settlement, expire, dll).
-                    // Di lokal: gunakan ngrok URL (https://<ngrok-id>.ngrok-free.app)
-                    // Di production: gunakan APP_URL production kamu
                     'callbacks' => [
                         'finish' => env('APP_URL') . '/pos',
                     ],
@@ -101,17 +91,12 @@ class CheckoutController extends Controller
                     $snapToken = Snap::getSnapToken($params);
                     $transaction->update(['midtrans_snap_token' => $snapToken]);
 
-                    // ─── Sandbox Auto-Simulate Payment ───────────────────────
-                    // Di sandbox, QRIS tidak bisa di-scan secara nyata.
-                    // Kita panggil Midtrans Simulate API agar status langsung
-                    // berubah ke 'settlement' tanpa intervensi manual.
                     if (!Config::$isProduction) {
                         $simulated = $this->simulateMidtransPayment($orderId);
                         if ($simulated) {
                             $transaction->update(['status' => 'success']);
                         }
                     }
-                    // ─────────────────────────────────────────────────────────
 
                     return response()->json([
                         'success' => true,
@@ -132,16 +117,6 @@ class CheckoutController extends Controller
         });
     }
 
-    /**
-     * Memanggil Midtrans Sandbox Simulate Payment API.
-     * Mengubah status transaksi dari 'pending' → 'settlement' secara programatik.
-     * HANYA digunakan di environment sandbox (MIDTRANS_IS_PRODUCTION=false).
-     *
-     * Dokumentasi: https://docs.midtrans.com/reference/status-cycle-and-action
-     *
-     * @param  string $orderId  Midtrans order_id yang ingin disimulasikan
-     * @return bool             true jika simulasi berhasil, false jika gagal
-     */
     private function simulateMidtransPayment(string $orderId): bool
     {
         $serverKey = env('MIDTRANS_SERVER_KEY');
@@ -150,7 +125,6 @@ class CheckoutController extends Controller
         $url = "https://api.sandbox.midtrans.com/v2/{$orderId}/status";
 
         try {
-            // Langkah 1: Ambil status transaksi saat ini
             $statusResponse = Http::withoutVerifying()
                 ->withHeaders([
                     'Authorization' => 'Basic ' . $auth,
@@ -163,8 +137,6 @@ class CheckoutController extends Controller
                 'response' => $statusResponse->json(),
             ]);
 
-            // Langkah 2: Panggil endpoint simulasi untuk force-settle
-            // Endpoint ini hanya tersedia di sandbox Midtrans
             $simulateUrl = "https://api.sandbox.midtrans.com/v2/{$orderId}/status/simulate";
 
             $simulateResponse = Http::withoutVerifying()
@@ -183,7 +155,6 @@ class CheckoutController extends Controller
                 'simulate_body' => $simulateResponse->json(),
             ]);
 
-            // Simulasi dianggap berhasil jika response 2xx
             return $simulateResponse->successful();
 
         } catch (\Exception $e) {
