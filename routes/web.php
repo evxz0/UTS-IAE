@@ -45,14 +45,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 });
 
-// ── Midtrans Webhook ─────────────────────────────────────────────────────────
-// Route ini dipanggil oleh server Midtrans (bukan browser user),
-// sehingga tidak butuh auth session maupun CSRF token.
-// Pastikan URL ini sudah di-set di Midtrans Dashboard:
-//   Sandbox → Settings → Configuration → Payment Notification URL
-//   Isi dengan: https://<ngrok-url>/midtrans/notification
 Route::post('/midtrans/notification', [MidtransNotificationController::class, 'handle'])
     ->name('midtrans.notification');
-// ─────────────────────────────────────────────────────────────────────────────
 
 require __DIR__.'/auth.php';
