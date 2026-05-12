@@ -8,6 +8,21 @@ export default defineConfig({
             refresh: true,
         }),
     ],
+    // ─── Docker HMR Support ───────────────────────────────
+    // Agar Vite bisa diakses dari browser host saat berjalan di Docker
+    server: {
+        host: '0.0.0.0',
+        port: 5173,
+        hmr: {
+            host: 'localhost',
+            port: 5173,
+        },
+        watch: {
+            // Polling diperlukan di Docker/WSL agar file changes terdeteksi
+            usePolling: true,
+            interval: 500,
+        },
+    },
     build: {
         rollupOptions: {
             output: {
